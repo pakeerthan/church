@@ -1,16 +1,17 @@
 <?php
 session_start();
 require 'db.php';
+include 'nav.php'; // Include the navigation component
 
 // Check if the user is logged in and has the correct role (Admin or Super Admin)
-if (!isset($_SESSION['user_id']) || ($_SESSION['role'] != 'super_admin' && $_SESSION['role'] != 'admin')) {
+if (!isset($_SESSION['user_id']) && ($_SESSION['role'] != 'super_admin' && $_SESSION['role'] != 'admin')) {
     echo "Access denied.";
     exit();
 }
 
 // Fetch all events from the database to populate the calendar
 $query = "
-    SELECT schedules.id, schedules.title, schedules.start, schedules.end, schedules.user_id, users.username 
+    SELECT schedules.id, schedules.title, schedules.description, schedules.start, schedules.end, schedules.user_id, users.username 
     FROM schedules 
     LEFT JOIN users ON schedules.user_id = users.id";  // Join the users table to get username
 
@@ -21,7 +22,7 @@ while ($row = $result->fetch_assoc()) {
     $events[] = [
         'id' => $row['id'],
         'title' => $row['title'],
-        'discription' => $row['description'],
+        'description' => $row['description'],
         'start' => $row['start'],
         'end' => $row['end'],
         'user_id' => $row['user_id'],
@@ -49,6 +50,9 @@ while ($user = $userResult->fetch_assoc()) {
 
     <!-- FullCalendar CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/3.10.2/fullcalendar.min.css">
+
+    <!-- Fontawsome css -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <!-- FullCalendar JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
@@ -190,10 +194,11 @@ while ($user = $userResult->fetch_assoc()) {
                     <?php endforeach; ?>
                 </select>
 
-                <button type="submit">Add Schedule</button>
+                <button id="btnSubmit" type="submit">Add Schedule</button>
             </form>
         </div>
     </div>
+
 
     <!-- Toast Notification -->
     <div id="toast" style="display:none; position: fixed; bottom: 20px; right: 20px; background: #4caf50; color: #fff; padding: 10px 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);">
@@ -204,6 +209,7 @@ while ($user = $userResult->fetch_assoc()) {
         $(document).ready(function() {
             // Function to open the modal
             function openModal(date) {
+                $('#btnSubmit').text('Add Schedule')
                 $('#modal-overlay').show();
                 $('#start').val(date.format('YYYY-MM-DD HH:mm'));
                 $('#end').val(date.add(1, 'hour').format('YYYY-MM-DD HH:mm'));
@@ -211,6 +217,7 @@ while ($user = $userResult->fetch_assoc()) {
 
             // Function to close the modal
             function closeModal() {
+                $('form')[0].reset();
                 $('#modal-overlay').hide();
             }
 
@@ -221,9 +228,10 @@ while ($user = $userResult->fetch_assoc()) {
                 droppable: true, // Allow events to be dragged and dropped
                 eventRender: function(event, element) {
                     // Create custom elements for username and description
-                    var titleElement = $('<div class="event-title" style="font-size: 14px; color: #fff;">' + (event.title || 'No title') + '</div>');
-                    var userNameElement = $('<div class="event-username" style="font-size: 12px; color: #fff;">Assigned to: ' + (event.username || 'No user name') + '</div>');
-                    var descriptionElement = $('<div class="event-description" style="font-size: 12px; color: #fff;">' + (event.description || 'No description') + '</div>');
+                    var titleElement = $('<div class="event-title" style="font-size: 16px; color: #fff;">' + (event.title || 'No title') + '</div>');
+                    var userNameElement = $('<div class="event-username" style="font-size: 12px; color: #fff;"><i class="fa-solid fa-user" style="color: #fff;margin-right:5px;"></i>' + (event.username || 'No user name') + '</div>');
+                    var descriptionElement = $('<div class="event-description" style="font-size: 12px; color: #fff;"><i class="fa-solid fa-envelope" style="color: #fff;margin-right:5px;"></i>' + (event.description || 'No description') + '</div>');
+                    var timeElement = $('<div class="event-date" style="font-size: 12px; color: #fff;"><i class="fa fa-clock" style="color: #fff;margin-right:5px;"></i>' + (event.start.format('HH:mm') || '00:00') + ' - ' + (event.end.format('HH:mm') || '00:00') + '</div>');
 
                     // Remove the title element from the event
                     element.find('.fc-title').remove(); // Removes the title from the event
@@ -233,10 +241,25 @@ while ($user = $userResult->fetch_assoc()) {
                     element.append(titleElement);
                     element.append(descriptionElement);
                     element.append(userNameElement);
+                    element.append(timeElement);
 
-                    // Add an icon for event status
-                    var icon = $('<i class="fa fa-calendar-check" style="color: #fff;"></i>'); // You can change this to any icon you'd like
-                    element.append(icon); // Append the icon to the event element
+                    // Add icons for Edit and Delete
+                    var iconContainer = $('<div class="event-icons" style="margin-top: 8px; text-align: right;"></div>');
+
+                    var editIcon = $('<i class="fa fa-edit" style="margin-right: 10px; cursor: pointer; color: #fff;"></i>');
+                    editIcon.on('click', function(e) {
+                        e.stopPropagation(); // Prevent other event handlers
+                        openEditModal(event); // Trigger the edit modal
+                    });
+
+                    var deleteIcon = $('<i class="fa fa-trash" style="cursor: pointer; color: #fff;"></i>');
+                    deleteIcon.on('click', function(e) {
+                        e.stopPropagation(); // Prevent other event handlers
+                        deleteEvent(event); // Handle delete
+                    });
+
+                    iconContainer.append(editIcon).append(deleteIcon);
+                    element.append(iconContainer);
 
                     // Style the event's background and border
                     element.css({
@@ -248,27 +271,17 @@ while ($user = $userResult->fetch_assoc()) {
                     });
                 },
 
-                dayRender: function(date, cell) {
-                    cell.css('cursor', 'pointer'); // Change the cursor style for all date cells
-                },
                 dayClick: function(date, jsEvent, view) {
-                    openModal(date); // Open the modal when a day is clicked
+                    // Display event details if necessary
+                    openModal(date);
                 },
                 eventClick: function(calEvent, jsEvent, view) {
-                    $('#eventTitle').text(calEvent.title);
-                    $('#eventDescription').text(calEvent.description);
-                    $('#eventStart').text(calEvent.start.format('YYYY-MM-DD HH:mm'));
-                    $('#eventEnd').text(calEvent.end.format('YYYY-MM-DD HH:mm'));
-                    $('#assignedUser').text(calEvent.username);
-                    $('#eventDetails').show();
+                    // Display event details in an alert box
+                    openEditModal(calEvent);
+                },
 
-                    $('#editEventBtn').click(function() {
-                        editEvent(calEvent);
-                    });
-
-                    $('#deleteEventBtn').click(function() {
-                        deleteEvent(calEvent.id);
-                    });
+                dayRender: function(date, cell) {
+                    cell.css('cursor', 'pointer'); // Change the cursor style for all date cells
                 }
             });
 
@@ -276,68 +289,146 @@ while ($user = $userResult->fetch_assoc()) {
             $('#scheduleForm').on('submit', function(e) {
                 e.preventDefault(); // Prevent the default form submission
 
-                const formData = $(this).serialize(); // Get form data
+                var eventId = $(this).data('event-id'); // Get event ID from the button's data attribute
 
+                if (eventId) {
+                    const formData = {
+                        id: eventId,
+                        title: $('#title').val(),
+                        description: $('#description').val(),
+                        start: $('#start').val(),
+                        end: $('#end').val(),
+                        user_id: $('#user_id').val(),
+                    };
+
+                    $.ajax({
+                        url: 'update_schedule.php', // Backend script for updating
+                        type: 'POST',
+                        data: formData,
+                        dataType: 'json', // Ensure response is treated as JSON
+                        success: function(response) {
+                            if (response.status === 'success') {
+                                // Get the existing event from the calendar
+                                const event = $('#calendar').fullCalendar('clientEvents', formData.id)[0];
+
+                                // Update event details
+                                event.title = formData.title;
+                                event.description = formData.description;
+                                event.start = moment(formData.start);
+                                event.end = moment(formData.end);
+                                event.user_id = formData.user_id;
+                                event.username = $('#user_id option:selected').text(); // Use correct select field ID
+
+                                // Update event on the calendar
+                                $('#calendar').fullCalendar('updateEvent', event);
+
+                                // Show success toast
+                                toastr.success(response.message || 'Schedule updated successfully.');
+
+                                // Close the modal and reset the form
+                                closeModal();
+                            } else {
+                                toastr.error(response.message || 'Failed to update schedule.');
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('Update error:', error);
+                            toastr.error('An error occurred while updating the schedule.');
+                        },
+                        complete: function() {
+                            console.log('Update AJAX completed.');
+                        }
+                    });
+                } else {
+                    const formData = $(this).serialize(); // Get form data
+
+                    $.ajax({
+                        url: 'create_schedule.php', // The PHP file where we submit data
+                        type: 'POST',
+                        data: formData,
+                        dataType: 'json',
+                        success: function(response) {
+                            if (response.status === 'success') {
+                                // Add new event to the calendar
+                                $('#calendar').fullCalendar('renderEvent', {
+                                    title: $('#title').val(),
+                                    description: $('#description').val(),
+                                    start: $('#start').val(),
+                                    end: $('#end').val(),
+                                    user_id: $('#user_id').val(),
+                                    username: $('#user_id').find(":selected").text(),
+                                }, true);
+
+                                // Show success toast message
+                                toastr.success(response.message);
+
+                                // Close the modal
+                                closeModal();
+                            } else {
+                                // Show error toast message
+                                toastr.error(response.message);
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            toastr.error('An error occurred while creating the schedule.');
+                        }
+                    });
+                }
+            });
+        });
+
+        function openEditModal(event) {
+            // Set the data attribute for event id
+            $('#scheduleForm').data('event-id', event.id);
+
+            // Make an AJAX request to store the event ID in the session
+            $.ajax({
+                url: 'store_event_in_session.php', // The PHP file that stores the event ID in session
+                type: 'POST',
+                data: {
+                    event_id: event.id
+                }, // Send the event ID to the server
+                success: function(response) {
+                    // Optionally handle success response (if needed)
+                },
+                error: function(xhr, status, error) {
+                    // Handle error if storing event ID failed
+                }
+            });
+
+            // Populate modal fields with the event's data
+            $('#title').val(event.title || '');
+            $('#description').val(event.description || '');
+            $('#start').val(event.start.format('YYYY-MM-DD HH:mm:ss'));
+            $('#end').val(event.end ? event.end.format('YYYY-MM-DD HH:mm:ss') : '');
+            $('#user_id').val(event.user_id || '');
+
+            $('#btnSubmit').text('Update Schedule')
+
+            // Show the modal
+            $('#modal-overlay').show();
+        }
+
+
+        function deleteEvent(event) {
+            if (confirm('Are you sure you want to delete this event?')) {
                 $.ajax({
-                    url: 'create_schedule.php', // The PHP file where we submit data
+                    url: 'delete_schedule.php', // Backend script to handle deletion
                     type: 'POST',
-                    data: formData,
-                    dataType: 'json',
+                    data: {
+                        id: event.id
+                    },
                     success: function(response) {
                         if (response.status === 'success') {
-                            // Add new event to the calendar
-                            $('#calendar').fullCalendar('renderEvent', {
-                                title: $('#title').val(),
-                                description: $('#description').val(),
-                                start: $('#start').val(),
-                                end: $('#end').val(),
-                                user_id: $('#user_id').val(),
-                                username: $('#user_id').find(":selected").text(),
-                            }, true);
-
-                            // Show success toast message
+                            // Remove the event from the calendar
+                            $('#calendar').fullCalendar('removeEvents', event.id);
                             toastr.success(response.message);
-
-                            // Close the modal
-                            closeModal();
-
-                            // Optionally: Clear form fields if needed
-                            $('form')[0].reset();
                         } else {
-                            // Show error toast message
                             toastr.error(response.message);
                         }
                     },
                     error: function(xhr, status, error) {
-                        toastr.error('An error occurred while creating the schedule.');
-                    }
-                });
-            });
-        });
-
-        function editEvent(calEvent) {
-            $('#title').val(calEvent.title);
-            $('#start').val(calEvent.start.format());
-            $('#end').val(calEvent.end.format());
-            $('#user_id').val(calEvent.user_id);
-            $('#modal-overlay').show();
-        }
-
-        function deleteEvent(eventId) {
-            if (confirm("Are you sure you want to delete this event?")) {
-                $.ajax({
-                    url: 'delete_schedule.php',
-                    type: 'POST',
-                    data: {
-                        id: eventId
-                    },
-                    success: function(response) {
-                        if (response == 'success') {
-                            alert('Schedule deleted successfully!');
-                            window.location.reload();
-                        } else {
-                            alert('Error deleting schedule.');
-                        }
+                        toastr.error('An error occurred while deleting the event.');
                     }
                 });
             }
@@ -356,6 +447,7 @@ while ($user = $userResult->fetch_assoc()) {
 
         // Function to close the modal
         function closeModal() {
+            $('form')[0].reset();
             $('#modal-overlay').hide();
         }
 

@@ -3,8 +3,9 @@ session_start();
 require 'db.php';
 include 'nav.php'; // Include the navigation component
 
+// Check if the user is logged in and has the correct role
 if (!isset($_SESSION['user_id']) && ($_SESSION['role'] != 'super_admin' || $_SESSION['role'] != 'admin')) {
-    echo "Access denied.";
+    echo "Access Denied.";
     exit();
 }
 
@@ -15,7 +16,7 @@ $admin_count = $admin_check_result->fetch_assoc()['admin_count'];
 
 // Determine allowed roles based on current user role and admin count
 $allowed_roles_query = "";
-if ($_SESSION['role'] == 'super_admin' && $admin_count == 0) {
+if ($_SESSION['role'] == 'super_admin') {
     // Super Admin can create the first Admin
     $allowed_roles_query = "SELECT id, role_name FROM roles WHERE role_name IN ('admin', 'staff')";
 } elseif ($_SESSION['role'] == 'admin') {
